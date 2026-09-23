@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
-# Per-arm joint sign corrections.
+# Per-arm joint corrections between LeRobot's convention and the URDF.
 #
-# LeRobot reports each joint in its own convention; the URDF declares its own
-# axis directions. Where the two disagree a joint renders backwards, and there
-# is no way to derive this from the data - it has to be observed once by eye and
-# recorded. Calibration does NOT fix it: a re-sweep produces the same mapping.
+# Neither of these is derivable from the data and neither is fixed by
+# recalibration - they have to be observed once by eye and recorded.
 #
-# Comma-separated joint names, or empty for none.
+#   *_INVERT  comma-separated joints that rotate the wrong way
+#   *_OFFSET  joint=degrees, a constant rotation added after inversion.
+#             Needed where a joint's true neutral is not the calibrated
+#             midpoint. wrist_roll is the usual case: lerobot forces its range
+#             to [0,4095] so its midpoint is always 2047.5 no matter where the
+#             joint physically sits, which can leave the gripper rendered
+#             rotated relative to the real arm.
 
-FERB_INVERT="wrist_roll"      # observed 2026-09-23: id 5, the joint before the gripper
-PHINEAS_INVERT=""             # none observed yet
+FERB_INVERT=""
+FERB_OFFSET="wrist_roll=180"     # claw rendered opposite to the real wrist
 
-export FERB_INVERT PHINEAS_INVERT
+PHINEAS_INVERT=""
+PHINEAS_OFFSET=""
+
+export FERB_INVERT FERB_OFFSET PHINEAS_INVERT PHINEAS_OFFSET
