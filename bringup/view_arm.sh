@@ -14,19 +14,10 @@ shift || true
 BRIDGE_ARGS=("$@")
 
 # Pick the URDF that matches the arm: Phineas has a trigger, Ferb has a claw.
-source "$R/bringup/joint_signs.sh" >/dev/null
 case "$(readlink -f "$PORT")" in
-  "$(readlink -f /dev/soarm_b 2>/dev/null)")
-      URDF="$R/urdf/phineas_leader.urdf"; WHO=Phineas; SIGNS="$PHINEAS_INVERT"; OFFS="$PHINEAS_OFFSET" ;;
-  *)  URDF="$R/urdf/ferb_follower.urdf";  WHO=Ferb;    SIGNS="$FERB_INVERT";    OFFS="$FERB_OFFSET" ;;
+  "$(readlink -f /dev/soarm_b 2>/dev/null)") URDF="$R/urdf/phineas_leader.urdf";   WHO=Phineas ;;
+  *)                                          URDF="$R/urdf/ferb_follower.urdf";    WHO=Ferb ;;
 esac
-# Recorded sign corrections apply unless --invert is given explicitly.
-if [ -n "$SIGNS" ] && [[ " ${BRIDGE_ARGS[*]} " != *" --invert "* ]]; then
-  BRIDGE_ARGS+=(--invert "$SIGNS")
-fi
-if [ -n "${OFFS:-}" ] && [[ " ${BRIDGE_ARGS[*]} " != *" --offset "* ]]; then
-  BRIDGE_ARGS+=(--offset "$OFFS")
-fi
 
 [ -e "$PORT" ] || { echo "[view_arm] ERROR: $PORT not present."; exit 1; }
 

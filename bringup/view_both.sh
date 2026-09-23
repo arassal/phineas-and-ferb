@@ -11,7 +11,6 @@ set -euo pipefail
 
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$R/bringup/ports.sh" >/dev/null
-source "$R/bringup/joint_signs.sh" >/dev/null
 
 # ROS setup.bash reads unset vars; -u must be off while sourcing it.
 set +u; source /opt/ros/jazzy/setup.bash; set -u
@@ -59,12 +58,12 @@ sleep 2
 
 echo "[both] PHINEAS bridge <- $PHINEAS_PORT"
 "$HOME/soarm101/.rosvenv/bin/python" "$R/tools/joint_state_bridge.py" \
-  --port "$PHINEAS_PORT" --prefix phineas_ ${PHINEAS_INVERT:+--invert "$PHINEAS_INVERT"} \
+  --port "$PHINEAS_PORT" --prefix phineas_ \
   --ros-args -r __node:=bridge_phineas -r joint_states:=/phineas/joint_states "$@" &
 
 echo "[both] FERB bridge    <- $FERB_PORT"
 "$HOME/soarm101/.rosvenv/bin/python" "$R/tools/joint_state_bridge.py" \
-  --port "$FERB_PORT" --prefix ferb_ ${FERB_INVERT:+--invert "$FERB_INVERT"} \
+  --port "$FERB_PORT" --prefix ferb_ \
   --ros-args -r __node:=bridge_ferb -r joint_states:=/ferb/joint_states "$@" &
 
 sleep 2

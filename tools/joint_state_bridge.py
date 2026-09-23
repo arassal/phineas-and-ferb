@@ -29,7 +29,6 @@ For the gripper (MotorNormMode.RANGE_0_100):
 
 import argparse
 import math
-import time
 import sys
 
 import rclpy
@@ -78,18 +77,9 @@ def _forbid_writes(handler):
 
 
 class JointStateBridge(Node):
-    def __init__(self, port_name, rate_hz, invert, clamp, prefix="", offsets=None):
+    def __init__(self, port_name, rate_hz, invert, clamp, prefix=""):
         super().__init__("soarm101_joint_state_bridge")
         self.prefix = prefix
-        self.offsets = offsets or {}   # joint -> degrees added after conversion
-        self.trace = None
-        # Continuous-rotation unwrapping state, per joint. The STS3215 encoder
-        # wraps 4095 -> 0 mid-travel on any joint whose calibrated range spans
-        # the whole encoder (wrist_roll always does, since lerobot pins it to
-        # [0,4095]). Without unwrapping, one sample jumps full scale and the
-        # model teleports.
-        self._prev_raw = {}
-        self._turns = {}
         self.invert = invert
         self.clamp = clamp
 
@@ -123,25 +113,7 @@ class JointStateBridge(Node):
         self.warned_limit = set()
         log.info(f"READ-ONLY bridge up on {port_name} at {rate_hz} Hz. Motors will not move.")
 
-    def unwrap(self, name, raw):
-        """Accumulate across encoder rollovers so the signal stays continuous."""
-        prev = self._prev_raw.get(name)
-        self._prev_raw[name] = raw
-        if prev is None:
-            self._turns[name] = 0
-            return raw
-        d = raw - prev
-        if d > MAX_RES / 2:        # rolled 0 -> 4095 going backwards
-            self._turns[name] -= 1
-        elif d < -MAX_RES / 2:     # rolled 4095 -> 0 going forwards
-            self._turns[name] += 1
-        return raw + self._turns[name] * (MAX_RES + 1)
-
     def convert(self, name, raw):
-        # Only full-encoder-range joints can roll over mid-travel.
-        rng_ = self.rng.get(name)
-        if rng_ and (rng_[1] - rng_[0]) >= MAX_RES:
-            raw = self.unwrap(name, raw)
         rng = self.rng.get(name)
         lo, hi = rng if rng else (0, MAX_RES)
         if name == "gripper":
@@ -153,18 +125,6 @@ class JointStateBridge(Node):
             val = math.radians((raw - mid) * 360.0 / MAX_RES)
         if self.invert.get(name):
             val = -val
-        # Constant angular offset, applied after inversion. Needed where a
-        # joint's true neutral is not at the calibrated midpoint - wrist_roll in
-        # particular, whose range is forced to [0,4095] so its midpoint is
-        # always 2047.5 regardless of where the joint physically sits.
-        if name in self.offsets:
-            val += math.radians(self.offsets[name])
-            # No wraparound here. wrist_roll turns a full 360 physically, but the
-            # URDF declares it revolute with limits of about +-160 deg, so the
-            # model cannot represent a whole turn. Wrapping to [-pi, pi] made it
-            # snap from one limit to the other mid-travel, which reads as the
-            # model jumping. Saturating at the URDF limit instead is stable and
-            # honest: past the limit the model simply stops following.
         if self.clamp:
             ulo, uhi = URDF_LIMITS[name]
             if not (ulo <= val <= uhi) and name not in self.warned_limit:
@@ -178,24 +138,16 @@ class JointStateBridge(Node):
 
     def tick(self):
         msg = JointState()
-        raw_log = {}
         msg.header.stamp = self.get_clock().now().to_msg()
         ok = 0
         for mid, name in JOINTS.items():
             raw, comm, err = self.ph.read2ByteTxRx(self.port, mid, ADDR_PRESENT_POS)
             if comm == 0 and err == 0:
                 self.last[name] = self.convert(name, raw)
-                raw_log[name] = raw
                 ok += 1
             msg.name.append(self.prefix + name)
             msg.position.append(self.last[name])
         self.pub.publish(msg)
-        if self.trace is not None and "wrist_roll" in raw_log:
-            self.trace.write(
-                f"{time.time():.3f} raw={raw_log['wrist_roll']} "
-                f"out={self.last['wrist_roll']:+.4f}\n"
-            )
-            self.trace.flush()
         if ok == 0:
             self.get_logger().warn("no motors responding", throttle_duration_sec=5.0)
 
@@ -218,36 +170,18 @@ def main():
     )
     ap.add_argument("--no-clamp", action="store_true", help="do not clamp to URDF joint limits")
     ap.add_argument("--prefix", default="", help="joint-name prefix, must match the prefixed URDF")
-    ap.add_argument("--trace-wrist-roll", default="", help="log raw+converted wrist_roll to this file")
-    ap.add_argument(
-        "--offset",
-        default="",
-        help="constant angular offsets in DEGREES, e.g. --offset wrist_roll=180,wrist_flex=-5",
-    )
     # Strip ROS args (--ros-args -r ...) before argparse sees them, and hand
     # the full argv to rclpy so remaps like -r __node:= still apply.
     a = ap.parse_args(rclpy.utilities.remove_ros_args(sys.argv)[1:])
 
     invert = {n.strip(): True for n in a.invert.split(",") if n.strip()}
-    offsets = {}
-    for item in a.offset.split(","):
-        item = item.strip()
-        if not item:
-            continue
-        if "=" not in item:
-            print(f"bad --offset entry '{item}', expected joint=degrees", file=sys.stderr)
-            return 2
-        k, v = item.split("=", 1)
-        offsets[k.strip()] = float(v)
-    bad = (set(invert) | set(offsets)) - set(JOINTS.values())
+    bad = set(invert) - set(JOINTS.values())
     if bad:
-        print(f"unknown joint(s): {sorted(bad)}", file=sys.stderr)
+        print(f"unknown joint(s) in --invert: {sorted(bad)}", file=sys.stderr)
         return 2
 
     rclpy.init(args=sys.argv)
-    node = JointStateBridge(a.port, a.rate, invert, not a.no_clamp, a.prefix, offsets)
-    if a.trace_wrist_roll:
-        node.trace = open(a.trace_wrist_roll, 'w')
+    node = JointStateBridge(a.port, a.rate, invert, not a.no_clamp, a.prefix)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
