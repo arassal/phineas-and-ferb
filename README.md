@@ -66,6 +66,24 @@ pct     = (clamp(raw) - range_min) / (range_max - range_min) * 100
 The motor applies `Homing_Offset` itself (`Present_Position = Actual_Position −
 Homing_Offset`), so it must **not** be subtracted again in software.
 
+## Joint sign conventions
+
+LeRobot reports each joint in its own convention and the URDF declares its own
+axis directions. Where they disagree a joint renders backwards. This cannot be
+derived from the data and **calibration does not fix it** - a re-sweep produces
+the same mapping. It has to be observed once and recorded.
+
+`bringup/joint_signs.sh` holds the corrections per arm; both launchers apply them
+automatically, so there is no flag to remember. Observed so far:
+
+| arm | inverted joints |
+| --- | --- |
+| Ferb | `wrist_flex` |
+| Phineas | none yet |
+
+To test a new one without editing the file, pass `--invert <joints>` explicitly -
+that overrides the recorded set for that run.
+
 ## Layout
 
 ```
