@@ -46,3 +46,22 @@ Two notes:
   count. Its physical travel really is 205.5 degrees while the URDF declares
   190, so the model clamps at the extremes unless run with `--no-clamp`. That is
   a limitation of the upstream URDF, not of the calibration.
+
+## Ferb — recovered from EEPROM 2026-09-23
+
+Ferb was calibrated before this workspace existed and its JSON was never on this
+machine — the calibration survived only in the motors. `tools/export_calibration.py`
+reconstructed it by reading `Homing_Offset`, `Min_Position_Limit` and
+`Max_Position_Limit` back off the bus. Two independent exports were byte-identical.
+
+| joint | range | span | degrees | URDF | Phineas span |
+| --- | --- | --- | --- | --- | --- |
+| shoulder_pan | [618, 3335] | 2717 | 238.9 | 220 | 2718 |
+| shoulder_lift | [977, 3367] | 2390 | 210.1 | 200 | 2546 |
+| elbow_flex | [1735, 3941] | 2206 | 193.9 | 194 | 2218 |
+| wrist_flex | [1498, 3790] | 2292 | 201.5 | 190 | 2338 |
+| wrist_roll | [0, 4095] | 4095 | 360.0 | 320 | 4095 |
+| gripper | [2044, 3519] | 1475 | 129.7 | 110 | 1237 |
+
+Ferb runs at 12.0 V; its motors are rated to 14.0 V, unlike Phineas's 12.0 V
+parts. Do not swap the two supplies — Phineas has an 8.0 V-limited motor at id 2.
