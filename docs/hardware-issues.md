@@ -31,6 +31,22 @@ Consequences:
 - Probably explains the USB dropout observed at 15:26, when the whole adapter
   disappeared from `lsusb` — a motor in alarm can disturb the bus.
 
+### Workaround: run the whole arm at 4-8 V
+
+Every motor on Phineas declares a minimum of 4.0 V. Id 2 caps at 8.0 V, the rest
+at 12.0 V. So the window where **all six** are in spec is **4.0-8.0 V**.
+
+Running the arm on USB power alone (~4.9 V) with the 12 V supply disconnected
+puts every motor in spec and makes calibration possible without replacing
+anything. Ferb already runs this way: 4.9 V, all six motors at 20/20 reads.
+
+This is acceptable for a *leader* arm in particular, which is moved by hand and
+only reports positions - it needs no torque. Calibration itself runs with torque
+disabled.
+
+It is **not** a fix for a follower arm, which must actually hold and move a
+payload.
+
 **Next step:** power the arm down and check whether id 2 is physically a
 different part from its neighbours. If it is genuinely a 12 V motor whose EEPROM
 limit was written wrong, raising `Max_Voltage_Limit` is a single register write.
