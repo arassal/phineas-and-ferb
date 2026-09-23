@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Phineas & Ferb — Teleop + RViz
+GenericName=SO-ARM101 leader-follower teleoperation
+Comment=Move Phineas by hand; Ferb follows. Both arms shown live in RViz.
+Exec=/home/alexander/phineas-and-ferb/bringup/launch_desktop.sh
+Path=/home/alexander/phineas-and-ferb
+Icon=applications-engineering
+Terminal=true
+Categories=Development;Robotics;
+Keywords=robot;lerobot;rviz;teleop;so101;

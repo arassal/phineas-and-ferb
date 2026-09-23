@@ -33,6 +33,7 @@ Units: body joints are degrees, the gripper is 0-100.
 """
 
 import argparse
+import signal
 import sys
 import time
 
@@ -96,7 +97,73 @@ def seed_goal_positions(port_name: str) -> bool:
     return True
 
 
+# URDF revolute limits, radians - the gripper needs its 0-100 range mapped onto
+# these; body joints come out of lerobot in degrees already.
+_URDF_GRIPPER = (-0.174533, 1.74533)
+
+
+class _RosPublisher:
+    """Publish both arms' joint states so RViz can render them during teleop.
+
+    Lives inside this process because teleop holds both serial ports; the
+    standalone read-only bridge cannot open them at the same time. Joint names
+    are prefixed to match the prefixed URDFs used by the dual-arm view.
+    """
+
+    def __init__(self):
+        import rclpy
+        from rclpy.node import Node
+        from sensor_msgs.msg import JointState
+
+        self._rclpy = rclpy
+        self._JointState = JointState
+        rclpy.init(args=None)
+        self.node = Node("teleop_joint_state_publisher")
+        self.pub_leader = self.node.create_publisher(JointState, "/phineas/joint_states", 10)
+        self.pub_follower = self.node.create_publisher(JointState, "/ferb/joint_states", 10)
+        print("[ros] publishing /phineas/joint_states and /ferb/joint_states")
+
+    def _msg(self, prefix, action):
+        import math
+
+        msg = self._JointState()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        for key, val in action.items():
+            joint = key.removesuffix(".pos")
+            if joint == "gripper":
+                lo, hi = _URDF_GRIPPER
+                rad = lo + (max(0.0, min(100.0, val)) / 100.0) * (hi - lo)
+            else:
+                rad = math.radians(val)
+            msg.name.append(prefix + joint)
+            msg.position.append(rad)
+        return msg
+
+    def publish(self, leader_action, follower_obs):
+        self.pub_leader.publish(self._msg("phineas_", leader_action))
+        self.pub_follower.publish(self._msg("ferb_", follower_obs))
+
+    def shutdown(self):
+        try:
+            self.node.destroy_node()
+        finally:
+            self._rclpy.try_shutdown()
+
+
+class _Stop(Exception):
+    """Raised from a SIGTERM handler so the finally block still runs."""
+
+
+def _on_sigterm(_signum, _frame):
+    raise _Stop()
+
+
 def main():
+    # Without this, `kill` terminates the process before the finally block runs
+    # and the follower is left energised and rigid. Turning SIGTERM into an
+    # exception lets the normal shutdown path release torque.
+    signal.signal(signal.SIGTERM, _on_sigterm)
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--leader-port", default="/dev/soarm_b")
     ap.add_argument("--follower-port", default="/dev/soarm_a")
@@ -107,9 +174,19 @@ def main():
     ap.add_argument("--fps", type=float, default=30.0)
     ap.add_argument("--max-step", type=float, default=5.0,
                     help="max per-step motion (degrees, or gripper percent)")
+    ap.add_argument("--publish-ros", action="store_true",
+                    help="also publish /phineas/joint_states and /ferb/joint_states for RViz. "
+                         "Needed because teleop owns both serial ports, so the standalone "
+                         "read-only bridge cannot run at the same time.")
+    ap.add_argument("--keep-cap", action="store_true",
+                    help="keep max_relative_target during following (default: drop it once aligned)")
     ap.add_argument("--dry-run", action="store_true",
                     help="report how far apart the arms are, then stop without moving anything")
     a = ap.parse_args()
+
+    pub = None
+    if a.publish_ros:
+        pub = _RosPublisher()
 
     from lerobot.common.control_utils import follower_smooth_move_to
     from lerobot.robots.so_follower import SOFollower, SOFollowerRobotConfig
@@ -171,27 +248,45 @@ def main():
         follower_smooth_move_to(robot, current, target, duration_s=a.align_seconds, fps=int(a.fps))
         print("[align] done - arms are matched.")
 
-        print(f"\n[teleop] following at {a.fps:.0f} Hz, per-step cap {a.max_step}. Ctrl-C to stop.\n")
+        if not a.keep_cap:
+            # The cap exists to protect the alignment move. Once the arms match,
+            # the leader is moved by hand so step sizes are inherently bounded,
+            # and the cap only adds lag. It also costs an extra Present_Position
+            # read per cycle - send_action only reads the follower back when
+            # max_relative_target is set - so dropping it speeds up the loop too.
+            robot.config.max_relative_target = None
+            print("\n[teleop] per-step cap released - tracking is now 1:1")
+        cap = a.max_step if a.keep_cap else "none"
+        print(f"[teleop] following at {a.fps:.0f} Hz, cap {cap}. Ctrl-C to stop.\n")
         period = 1.0 / a.fps
         n = 0
         while True:
             t0 = time.perf_counter()
-            robot.send_action(teleop.get_action())
+            leader_action = teleop.get_action()
+            robot.send_action(leader_action)
+            if pub is not None:
+                follower_obs = {k: v for k, v in robot.get_observation().items()
+                                if k.endswith(".pos")}
+                pub.publish(leader_action, follower_obs)
             n += 1
             if n % 60 == 0:
                 print(f"\r  frames: {n}", end="", flush=True)
             dt = period - (time.perf_counter() - t0)
             if dt > 0:
                 time.sleep(dt)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, _Stop):
         print("\n[teleop] stopping.")
     finally:
         # disable_torque_on_disconnect defaults True, so Ferb goes limp here.
         print("[shutdown] disconnecting; Ferb's torque will be released.")
         try:
-            teleop.disconnect()
+            if pub is not None:
+                pub.shutdown()
         finally:
-            robot.disconnect()
+            try:
+                teleop.disconnect()
+            finally:
+                robot.disconnect()
     return 0
 
 
