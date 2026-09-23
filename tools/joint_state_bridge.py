@@ -29,6 +29,7 @@ For the gripper (MotorNormMode.RANGE_0_100):
 
 import argparse
 import math
+import time
 import sys
 
 import rclpy
@@ -81,6 +82,14 @@ class JointStateBridge(Node):
         super().__init__("soarm101_joint_state_bridge")
         self.prefix = prefix
         self.offsets = offsets or {}   # joint -> degrees added after conversion
+        self.trace = None
+        # Continuous-rotation unwrapping state, per joint. The STS3215 encoder
+        # wraps 4095 -> 0 mid-travel on any joint whose calibrated range spans
+        # the whole encoder (wrist_roll always does, since lerobot pins it to
+        # [0,4095]). Without unwrapping, one sample jumps full scale and the
+        # model teleports.
+        self._prev_raw = {}
+        self._turns = {}
         self.invert = invert
         self.clamp = clamp
 
@@ -114,7 +123,25 @@ class JointStateBridge(Node):
         self.warned_limit = set()
         log.info(f"READ-ONLY bridge up on {port_name} at {rate_hz} Hz. Motors will not move.")
 
+    def unwrap(self, name, raw):
+        """Accumulate across encoder rollovers so the signal stays continuous."""
+        prev = self._prev_raw.get(name)
+        self._prev_raw[name] = raw
+        if prev is None:
+            self._turns[name] = 0
+            return raw
+        d = raw - prev
+        if d > MAX_RES / 2:        # rolled 0 -> 4095 going backwards
+            self._turns[name] -= 1
+        elif d < -MAX_RES / 2:     # rolled 4095 -> 0 going forwards
+            self._turns[name] += 1
+        return raw + self._turns[name] * (MAX_RES + 1)
+
     def convert(self, name, raw):
+        # Only full-encoder-range joints can roll over mid-travel.
+        rng_ = self.rng.get(name)
+        if rng_ and (rng_[1] - rng_[0]) >= MAX_RES:
+            raw = self.unwrap(name, raw)
         rng = self.rng.get(name)
         lo, hi = rng if rng else (0, MAX_RES)
         if name == "gripper":
@@ -151,16 +178,24 @@ class JointStateBridge(Node):
 
     def tick(self):
         msg = JointState()
+        raw_log = {}
         msg.header.stamp = self.get_clock().now().to_msg()
         ok = 0
         for mid, name in JOINTS.items():
             raw, comm, err = self.ph.read2ByteTxRx(self.port, mid, ADDR_PRESENT_POS)
             if comm == 0 and err == 0:
                 self.last[name] = self.convert(name, raw)
+                raw_log[name] = raw
                 ok += 1
             msg.name.append(self.prefix + name)
             msg.position.append(self.last[name])
         self.pub.publish(msg)
+        if self.trace is not None and "wrist_roll" in raw_log:
+            self.trace.write(
+                f"{time.time():.3f} raw={raw_log['wrist_roll']} "
+                f"out={self.last['wrist_roll']:+.4f}\n"
+            )
+            self.trace.flush()
         if ok == 0:
             self.get_logger().warn("no motors responding", throttle_duration_sec=5.0)
 
@@ -183,6 +218,7 @@ def main():
     )
     ap.add_argument("--no-clamp", action="store_true", help="do not clamp to URDF joint limits")
     ap.add_argument("--prefix", default="", help="joint-name prefix, must match the prefixed URDF")
+    ap.add_argument("--trace-wrist-roll", default="", help="log raw+converted wrist_roll to this file")
     ap.add_argument(
         "--offset",
         default="",
@@ -210,6 +246,8 @@ def main():
 
     rclpy.init(args=sys.argv)
     node = JointStateBridge(a.port, a.rate, invert, not a.no_clamp, a.prefix, offsets)
+    if a.trace_wrist_roll:
+        node.trace = open(a.trace_wrist_roll, 'w')
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

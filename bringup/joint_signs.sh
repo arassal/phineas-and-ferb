@@ -13,7 +13,7 @@
 #             rotated relative to the real arm.
 
 FERB_INVERT=""
-FERB_OFFSET="wrist_roll=180"     # claw rendered opposite to the real wrist
+FERB_OFFSET=""                   # re-evaluate after unwrapping
 
 PHINEAS_INVERT=""
 PHINEAS_OFFSET=""
