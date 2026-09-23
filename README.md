@@ -78,7 +78,7 @@ automatically, so there is no flag to remember. Observed so far:
 
 | arm | inverted joints |
 | --- | --- |
-| Ferb | `wrist_flex` |
+| Ferb | `wrist_roll` |
 | Phineas | none yet |
 
 To test a new one without editing the file, pass `--invert <joints>` explicitly -

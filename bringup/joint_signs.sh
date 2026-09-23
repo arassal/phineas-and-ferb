@@ -8,7 +8,7 @@
 #
 # Comma-separated joint names, or empty for none.
 
-FERB_INVERT="wrist_flex"      # observed 2026-09-23: wrist rendered backwards
+FERB_INVERT="wrist_roll"      # observed 2026-09-23: id 5, the joint before the gripper
 PHINEAS_INVERT=""             # none observed yet
 
 export FERB_INVERT PHINEAS_INVERT
