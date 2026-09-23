@@ -47,7 +47,33 @@ Two notes:
   190, so the model clamps at the extremes unless run with `--no-clamp`. That is
   a limitation of the upstream URDF, not of the calibration.
 
-## Ferb — recovered from EEPROM 2026-09-23
+## Ferb — re-swept 2026-09-23 16:18 (supersedes the EEPROM recovery below)
+
+| joint | range | span | degrees | URDF | backup | Phineas |
+| --- | --- | --- | --- | --- | --- | --- |
+| shoulder_pan | [889, 3607] | 2718 | 238.9 | 220 | 2717 | 2718 |
+| shoulder_lift | [867, 3264] | 2397 | 210.7 | 200 | 2390 | 2546 |
+| elbow_flex | [911, 3102] | 2191 | 192.6 | 194 | 2206 | 2218 |
+| wrist_flex | [858, 3161] | 2303 | 202.5 | 190 | 2292 | 2338 |
+| wrist_roll | [0, 4095] | 4095 | 360.0 | 320 | 4095 | 4095 |
+| gripper | [2020, 3487] | 1467 | 129.0 | 110 | 1475 | 1237 |
+
+Three independent measurements of this arm (EEPROM recovery, and two
+re-sweeps) agree within about 15 counts on every joint.
+
+### A failed sweep in between, worth recording
+
+An intermediate sweep at 16:14 produced `wrist_flex = [11, 4088]`, a span of
+4077 counts (358 degrees) for a joint that physically travels about 200. Its
+homing offset had moved to -1362, putting the encoder's 0/4095 wrap point
+*inside* the joint's travel, so the recorded min/max swallowed nearly the whole
+circle. The fix is to make sure that joint sits genuinely mid-travel during the
+centring step, which keeps the wrap point outside its range.
+
+Sanity check for any future sweep: a span above ~1.4x the URDF range means
+wraparound, not a wide joint.
+
+## Ferb — earlier EEPROM recovery (superseded)
 
 Ferb was calibrated before this workspace existed and its JSON was never on this
 machine — the calibration survived only in the motors. `tools/export_calibration.py`
