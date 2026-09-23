@@ -1,0 +1,71 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded: [/Phineas1, /Ferb1]
+      Splitter Ratio: 0.5
+    Tree Height: 700
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 0.1
+      Plane Cell Count: 24
+      Color: 130; 130; 136
+      Line Style:
+        Value: Lines
+      Reference Frame: <Fixed Frame>
+    - Class: rviz_default_plugins/RobotModel
+      Name: Phineas
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Value: /phineas/robot_description
+        Depth: 5
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Alpha: 1
+      Visual Enabled: true
+      Collision Enabled: false
+    - Class: rviz_default_plugins/RobotModel
+      Name: Ferb
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Value: /ferb/robot_description
+        Depth: 5
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Alpha: 1
+      Visual Enabled: true
+      Collision Enabled: false
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: false
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+      Marker Scale: 0.12
+  Global Options:
+    Background Color: 44; 46; 52
+    Fixed Frame: world
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Distance: 1.6
+      Focal Point: {X: 0, Y: 0, Z: 0.15}
+      Pitch: 0.38
+      Yaw: 1.1
+      Target Frame: world
+Window Geometry:
+  Height: 900
+  Width: 1500
+  Displays: {collapsed: false}

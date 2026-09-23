@@ -1,0 +1,6 @@
+.rosvenv/
+__pycache__/
+*.pyc
+# generated at launch from the URDFs
+*_params.yaml
+urdf/generated/
