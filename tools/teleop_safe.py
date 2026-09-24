@@ -211,6 +211,8 @@ def main():
     ap.add_argument("--camera-width", type=int, default=640)
     ap.add_argument("--camera-height", type=int, default=360)
     ap.add_argument("--camera-fps", type=int, default=30)
+    ap.add_argument("--camera-fourcc", default="MJPG",
+                    help="MJPG keeps 640x480 at a full 30 fps on the U20CAM")
     ap.add_argument("--publish-ros", action="store_true",
                     help="also publish /phineas/joint_states and /ferb/joint_states for RViz. "
                          "Needed because teleop owns both serial ports, so the standalone "
@@ -236,6 +238,7 @@ def main():
         cameras[a.camera_name] = OpenCVCameraConfig(
             index_or_path=a.camera, fps=a.camera_fps,
             width=a.camera_width, height=a.camera_height,
+            fourcc=a.camera_fourcc or None,
         )
         print(f"[camera] {a.camera_name} <- {a.camera} "
               f"({a.camera_width}x{a.camera_height} @ {a.camera_fps})")

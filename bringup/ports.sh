@@ -18,9 +18,13 @@ echo "PHINEAS (leader, trigger) $PHINEAS_PORT : $(_st "$PHINEAS_PORT")"
 echo "FERB    (follower, claw)  $FERB_PORT : $(_st "$FERB_PORT")"
 
 # Camera mounted on/near Ferb. Empty string disables it.
-#   /dev/video0  laptop built-in webcam
-#   /dev/video2  added camera (640x360)
-#   /dev/video4  Vitade AF - returned an all-black frame when last checked
-export FERB_CAMERA=/dev/video2
+#
+# Mapped with `udevadm info -q property -n /dev/videoN`:
+#   /dev/video0, /dev/video2  0c45:6d1f  Integrated_Webcam_HD       (laptop, 2 streams)
+#   /dev/video4, /dev/video5  0c45:6366  Innomaker-U20CAM-1080p-S1  (the USB camera)
+#
+# video2 is the laptop's SECOND sensor, not an external camera - it looks
+# plausible in a still, which is how it got picked by mistake once.
+export FERB_CAMERA=/dev/video4
 export FERB_CAMERA_W=640
-export FERB_CAMERA_H=360
+export FERB_CAMERA_H=480
