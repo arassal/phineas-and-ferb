@@ -70,9 +70,11 @@ source "$HOME/lerobot/.venv/bin/activate"
 CAM_ARGS=()
 if [ -n "${FERB_CAMERA:-}" ]; then
   if [ -e "$FERB_CAMERA" ]; then
-    # UVC control values persist on the device between processes, so reset them
-    # to auto-exposure/neutral-gain before lerobot opens the camera.
-    python3 "$R/tools/camera_setup.py" "$FERB_CAMERA" || true
+    # NOTE: do not open the camera here first. lerobot configures it correctly
+    # on its own, and opening/releasing the device immediately beforehand leaves
+    # it unable to read - lerobot's background thread then fails with
+    # "read failed (status=False)" and dies. tools/camera_setup.py exists as a
+    # standalone diagnostic, not as a pre-flight step.
     CAM_ARGS=(--camera "$FERB_CAMERA"
               --camera-width "${FERB_CAMERA_W:-640}"
               --camera-height "${FERB_CAMERA_H:-480}")

@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """
-Put a UVC camera's controls into a sane state before lerobot opens it.
+Diagnostic: check a UVC camera and reset its controls to sane values.
 
-Why this exists: UVC control values live on the device and persist across
-open/close, and across processes, until it is unplugged. The Innomaker
-U20CAM-1080p on this rig was found with BRIGHTNESS=0, which produces a
-completely black frame at every resolution and format - easily mistaken for a
-broken camera. Conversely, forcing manual exposure with high gain leaves the
-image blown out for every later session.
+DO NOT run this immediately before lerobot opens the camera. lerobot
+configures the device correctly by itself, and opening/releasing it just
+beforehand leaves it unable to read - lerobot's background read thread then
+fails with "read failed (status=False)" and dies.
 
-lerobot's OpenCVCameraConfig does not expose brightness/gain/exposure, so this
-runs first and leaves the device on auto-exposure with neutral gain.
+Use it on its own, to answer "is this camera actually producing an image?":
 
     ./tools/camera_setup.py /dev/video4
+
+It reports mean and standard deviation of one frame. A very low standard
+deviation means a featureless frame, which is what a lens cover looks like -
+and is indistinguishable from broken hardware without this check.
+
+It also restores auto-exposure and neutral gain, which matters because UVC
+control values live on the camera and persist across open/close, across
+processes, and until it is unplugged. So a session that forces manual exposure
+or high gain to diagnose something leaves the image wrong for every session
+afterwards.
 """
 
 import sys
