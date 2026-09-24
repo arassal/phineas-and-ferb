@@ -38,7 +38,13 @@ PY
 mkparams "$R/urdf/generated/phineas.urdf" "$R/urdf/generated/phineas_params.yaml" rsp_phineas
 mkparams "$R/urdf/generated/ferb.urdf"    "$R/urdf/generated/ferb_params.yaml"    rsp_ferb
 
-cleanup() { echo; echo "[teleop_rviz] shutting down..."; kill 0 2>/dev/null || true; }
+_cleaned=0
+cleanup() {
+  [ "$_cleaned" = 1 ] && return
+  _cleaned=1          # kill 0 re-triggers this trap; only run once
+  echo; echo "[teleop_rviz] shutting down..."
+  kill 0 2>/dev/null || true
+}
 trap cleanup EXIT INT TERM
 
 ros2 run tf2_ros static_transform_publisher \
@@ -61,5 +67,17 @@ rviz2 -d "$R/bringup/rviz/both.rviz" &
 
 # Teleop last, and in the foreground, so Ctrl-C reaches it and torque is released.
 source "$HOME/lerobot/.venv/bin/activate"
+CAM_ARGS=()
+if [ -n "${FERB_CAMERA:-}" ]; then
+  if [ -e "$FERB_CAMERA" ]; then
+    CAM_ARGS=(--camera "$FERB_CAMERA"
+              --camera-width "${FERB_CAMERA_W:-640}"
+              --camera-height "${FERB_CAMERA_H:-360}")
+  else
+    echo "[teleop_rviz] WARNING: $FERB_CAMERA not present - continuing without a camera."
+  fi
+fi
+
 python "$R/tools/teleop_safe.py" \
-  --leader-port "$PHINEAS_PORT" --follower-port "$FERB_PORT" --publish-ros "$@"
+  --leader-port "$PHINEAS_PORT" --follower-port "$FERB_PORT" --publish-ros \
+  "${CAM_ARGS[@]}" "$@"

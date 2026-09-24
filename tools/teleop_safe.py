@@ -68,7 +68,11 @@ def seed_goal_positions(port_name: str) -> bool:
         tq, c1, e1 = ph.read1ByteTxRx(port, mid, ADDR_TORQUE_ENABLE)
         pos, c2, e2 = ph.read2ByteTxRx(port, mid, ADDR_PRESENT_POSITION)
         goal, c3, e3 = ph.read2ByteTxRx(port, mid, ADDR_GOAL_POSITION)
-        if 0 in (c1, c2, c3) and tq == 1 and abs(pos - goal) > 50:
+        # 200 counts is about 17 degrees. Below that an energised motor is
+        # holding near its goal (normal servo sag), and seeding it to exactly
+        # its present position is strictly safer than leaving it. Only a large
+        # delta means it is actively driving somewhere and should not be touched.
+        if 0 in (c1, c2, c3) and tq == 1 and abs(pos - goal) > 200:
             driving.append((mid, pos, goal))
     if driving:
         print("[seed] REFUSING: these motors are energised and being driven:", file=sys.stderr)
@@ -113,15 +117,18 @@ class _RosPublisher:
     def __init__(self):
         import rclpy
         from rclpy.node import Node
-        from sensor_msgs.msg import JointState
+        from sensor_msgs.msg import Image, JointState
 
         self._rclpy = rclpy
         self._JointState = JointState
+        self._Image = Image
         rclpy.init(args=None)
         self.node = Node("teleop_joint_state_publisher")
         self.pub_leader = self.node.create_publisher(JointState, "/phineas/joint_states", 10)
         self.pub_follower = self.node.create_publisher(JointState, "/ferb/joint_states", 10)
-        print("[ros] publishing /phineas/joint_states and /ferb/joint_states")
+        self.pub_image = self.node.create_publisher(Image, "/ferb/camera/image_raw", 5)
+        print("[ros] publishing /phineas/joint_states, /ferb/joint_states, "
+              "/ferb/camera/image_raw")
 
     def _msg(self, prefix, action):
         import math
@@ -138,6 +145,30 @@ class _RosPublisher:
             msg.name.append(prefix + joint)
             msg.position.append(rad)
         return msg
+
+    def publish_image(self, frame):
+        """Publish an HxWx3 RGB array as sensor_msgs/Image.
+
+        Built by hand rather than via cv_bridge: lerobot already hands us a
+        contiguous uint8 RGB array, so there is nothing to convert, and this
+        avoids pulling cv_bridge into lerobot's venv.
+        """
+        import numpy as np
+
+        if frame is None:
+            return
+        arr = np.ascontiguousarray(frame, dtype=np.uint8)
+        if arr.ndim != 3 or arr.shape[2] != 3:
+            return
+        msg = self._Image()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.header.frame_id = "ferb_gripper_frame_link"
+        msg.height, msg.width = arr.shape[0], arr.shape[1]
+        msg.encoding = "rgb8"
+        msg.is_bigendian = 0
+        msg.step = arr.shape[1] * 3
+        msg.data = arr.tobytes()
+        self.pub_image.publish(msg)
 
     def publish(self, leader_action, follower_obs):
         self.pub_leader.publish(self._msg("phineas_", leader_action))
@@ -174,6 +205,12 @@ def main():
     ap.add_argument("--fps", type=float, default=30.0)
     ap.add_argument("--max-step", type=float, default=5.0,
                     help="max per-step motion (degrees, or gripper percent)")
+    ap.add_argument("--camera", default="",
+                    help="camera device for the follower, e.g. /dev/video2. Empty disables it.")
+    ap.add_argument("--camera-name", default="scene")
+    ap.add_argument("--camera-width", type=int, default=640)
+    ap.add_argument("--camera-height", type=int, default=360)
+    ap.add_argument("--camera-fps", type=int, default=30)
     ap.add_argument("--publish-ros", action="store_true",
                     help="also publish /phineas/joint_states and /ferb/joint_states for RViz. "
                          "Needed because teleop owns both serial ports, so the standalone "
@@ -192,8 +229,20 @@ def main():
     from lerobot.robots.so_follower import SOFollower, SOFollowerRobotConfig
     from lerobot.teleoperators.so_leader import SOLeader, SOLeaderTeleopConfig
 
+    cameras = {}
+    if a.camera:
+        from lerobot.cameras.opencv import OpenCVCameraConfig
+
+        cameras[a.camera_name] = OpenCVCameraConfig(
+            index_or_path=a.camera, fps=a.camera_fps,
+            width=a.camera_width, height=a.camera_height,
+        )
+        print(f"[camera] {a.camera_name} <- {a.camera} "
+              f"({a.camera_width}x{a.camera_height} @ {a.camera_fps})")
+
     robot = SOFollower(SOFollowerRobotConfig(
-        port=a.follower_port, id=a.follower_id, max_relative_target=a.max_step))
+        port=a.follower_port, id=a.follower_id, max_relative_target=a.max_step,
+        cameras=cameras))
     teleop = SOLeader(SOLeaderTeleopConfig(port=a.leader_port, id=a.leader_id))
 
     # Seeding must happen immediately before connect, and the arm must not be
@@ -265,9 +314,11 @@ def main():
             leader_action = teleop.get_action()
             robot.send_action(leader_action)
             if pub is not None:
-                follower_obs = {k: v for k, v in robot.get_observation().items()
-                                if k.endswith(".pos")}
+                obs = robot.get_observation()
+                follower_obs = {k: v for k, v in obs.items() if k.endswith(".pos")}
                 pub.publish(leader_action, follower_obs)
+                if a.camera and a.camera_name in obs:
+                    pub.publish_image(obs[a.camera_name])
             n += 1
             if n % 60 == 0:
                 print(f"\r  frames: {n}", end="", flush=True)

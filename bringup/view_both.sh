@@ -31,7 +31,13 @@ PY
 mkparams "$R/urdf/generated/phineas.urdf" "$R/urdf/generated/phineas_params.yaml" rsp_phineas
 mkparams "$R/urdf/generated/ferb.urdf"    "$R/urdf/generated/ferb_params.yaml"    rsp_ferb
 
-cleanup() { echo; echo "[both] shutting down..."; kill 0 2>/dev/null || true; }
+_cleaned=0
+cleanup() {
+  [ "$_cleaned" = 1 ] && return
+  _cleaned=1          # kill 0 re-triggers this trap; only run once
+  echo; echo "[both] shutting down..."
+  kill 0 2>/dev/null || true
+}
 trap cleanup EXIT INT TERM
 
 # Place the two arms either side of a shared 'world' frame so they don't overlap.
